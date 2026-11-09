@@ -1,0 +1,2 @@
+-keep class com.priyo.codex.data.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
