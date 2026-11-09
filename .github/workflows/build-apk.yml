@@ -34,24 +34,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK and accept licenses
+      # Setup Android SDK and accept licenses automatically
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
-            cmake;3.22.1
-            ndk;27.2.12479018
+          packages: ''
+
+      # Install every SDK package separately
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -e
+
+          sdkmanager --install "platform-tools"
+          sdkmanager --install "platforms;android-36"
+          sdkmanager --install "build-tools;36.0.0"
+          sdkmanager --install "cmake;3.22.1"
+          sdkmanager --install "ndk;27.2.12479018"
+
+          echo "All Android SDK packages installed."
 
       - name: Verify Android SDK
         run: |
-          echo "Android SDK setup completed."
           test -d "$ANDROID_HOME/platform-tools"
           test -d "$ANDROID_HOME/platforms/android-36"
           test -d "$ANDROID_HOME/build-tools/36.0.0"
+          echo "Android SDK verification successful."
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -62,31 +72,35 @@ jobs:
         id: project
         shell: bash
         run: |
-          if [ -f settings.gradle.kts ]; then
+          if [ -f "settings.gradle.kts" ]; then
             DIR="."
           else
-            DIR=$(find . -name settings.gradle.kts \
-              -not -path './.git/*' \
-              -not -path './extracted/*' \
+            DIR=$(find . \
+              -path './.git' -prune -o \
+              -path './extracted' -prune -o \
+              -name settings.gradle.kts \
               -print -quit | xargs -r dirname)
           fi
 
           if [ -z "$DIR" ]; then
-            echo "Android project not found!"
+            echo "ERROR: Android project not found."
             exit 1
           fi
 
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Project directory: $DIR"
 
-      - name: Validate project
+      - name: Validate project files
         working-directory: ${{ steps.project.outputs.dir }}
         run: |
+          set -e
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f app/build.gradle.kts
           test -f scripts/prepare-native.sh
           test -f scripts/download-model.sh
           test -f app/src/main/cpp/CMakeLists.txt
+          echo "Project files verified."
 
       - name: Prepare llama.cpp
         working-directory: ${{ steps.project.outputs.dir }}
@@ -103,7 +117,7 @@ jobs:
           MODEL="app/src/main/assets/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 
           if [ ! -s "$MODEL" ]; then
-            echo "GGUF model missing or empty!"
+            echo "ERROR: GGUF model is missing."
             exit 1
           fi
 
@@ -121,12 +135,9 @@ jobs:
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -s "$APK" ]; then
-            echo "APK not found!"
-            exit 1
-          fi
-
+          test -s "$APK"
           ls -lh "$APK"
+          echo "APK successfully generated."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
