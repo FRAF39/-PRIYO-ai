@@ -1,0 +1,69 @@
+name: Extract ZIP Files
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract uploaded ZIP files safely
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          root = Path.cwd()
+          output = root / "extracted"
+          output.mkdir(exist_ok=True)
+
+          archives = [
+              p for p in root.rglob("*.zip")
+              if ".git" not in p.parts and "extracted" not in p.parts
+          ]
+
+          if not archives:
+              print("No ZIP files found.")
+              raise SystemExit(0)
+
+          for archive in archives:
+              destination = output / archive.stem
+              destination.mkdir(parents=True, exist_ok=True)
+
+              with zipfile.ZipFile(archive) as z:
+                  for item in z.infolist():
+                      target = (destination / item.filename).resolve()
+
+                      if not target.is_relative_to(destination.resolve()):
+                          raise RuntimeError(
+                              f"Unsafe ZIP path: {item.filename}"
+                          )
+
+                      if item.is_dir():
+                          target.mkdir(parents=True, exist_ok=True)
+                      else:
+                          target.parent.mkdir(parents=True, exist_ok=True)
+                          with z.open(item) as src, open(target, "wb") as dst:
+                              dst.write(src.read())
+
+              print(f"Extracted: {archive.name} -> {destination}")
+
+          PY
+
+      - name: Save extracted files to GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add extracted/
+          git commit -m "Extract uploaded ZIP files" || echo "Nothing to commit"
+          git push
